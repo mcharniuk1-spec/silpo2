@@ -1,3 +1,11 @@
-node_modules
-.DS_Store
-playwright-report
+node_modules/
+dist/
+.env
+
+data/**/*.sqlite
+data/exports/*.xlsx
+data/exports/*.csv
+data/logs/*.jsonl
+data/html_snapshots/*.html
+
+!data/.gitkeep
