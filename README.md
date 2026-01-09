@@ -1,11 +1,14 @@
-# Silpo Full Scraper (category → SQLite → XLSX)
+# silpo2 — Full Scraper (dairy)
 
-Primary storage: `data/silpo.sqlite` (all runs & products).
-Exports: `data/exports/*.xlsx` + `data/exports/latest.xlsx`.
-Logs: `data/logs/*.jsonl`.
+Outputs:
+- DB: `data/silpo.sqlite`
+- Exports: `data/exports/latest.xlsx`, `data/exports/latest.csv`
+- Logs: `data/logs/run_*.jsonl`
+- HTML snapshots (only when challenge detected): `data/html_snapshots/*.html`
 
-## Run locally
+Run locally:
 ```bash
 npm ci
 npx playwright install chromium
-npm run scrape
+npm run build
+npm run start
