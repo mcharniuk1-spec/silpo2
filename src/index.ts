@@ -1,103 +1,73 @@
-import { CONFIG } from "./config.js";
-import { ensureDir, safeFileName } from "./utils/fs.js";
-import { JsonlLogger } from "./utils/logger.js";
-import { openDb } from "./db/client.js";
-import { ensureSchema } from "./db/schema.js";
-import { insertRun, finishRun, insertPage, insertProducts, getRunProducts } from "./db/queries.js";
-import { scrapeSilpoCategory } from "./scrapers/silpoCategory.js";
-import { exportRowsToXlsx } from "./export/toXlsx.js";
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
 
-function makeRunId(): string {
-  // filesystem-safe ISO
-  return safeFileName(new Date().toISOString());
+import { loadConfig } from "./config";
+import { JsonlLogger } from "./utils/logger";
+import { openDb, insertRun, finishRun, insertObservations, fetchObservations } from "./db";
+import { exportCsv, exportXlsx } from "./export";
+import { scrapeCategory } from "./scrapers/silpoCategory";
+
+function nowIso() {
+  return new Date().toISOString();
 }
 
 async function main() {
-  ensureDir("data");
-  ensureDir(CONFIG.exportsDir);
-  ensureDir(CONFIG.logsDir);
+  const cfg = loadConfig();
+  fs.mkdirSync("data", { recursive: true });
+  fs.mkdirSync(cfg.logsDir, { recursive: true });
+  fs.mkdirSync(cfg.exportsDir, { recursive: true });
 
-  const runId = makeRunId();
-  const logger = new JsonlLogger(CONFIG.logsDir, runId);
+  const runId = crypto.randomUUID();
+  const startedAt = nowIso();
 
-  logger.info("START", "main", "run started", {
-    runId,
-    categoryUrl: CONFIG.categoryUrl,
-    maxPages: CONFIG.maxPages,
-    headless: CONFIG.headless
-  });
+  const logFile = path.join(cfg.logsDir, `run_${startedAt.replace(/[:\-]/g, "").slice(0, 15)}_${runId.slice(0, 8)}.jsonl`);
+  const logger = new JsonlLogger(logFile);
 
-  const db = openDb(CONFIG.dbPath);
-  ensureSchema(db);
-
-  const startedAt = new Date().toISOString();
+  const db = openDb(cfg.dbPath);
   insertRun(db, {
     runId,
     startedAt,
-    status: "STARTED",
-    categoryUrl: CONFIG.categoryUrl,
-    maxPages: CONFIG.maxPages
+    categoryUrl: cfg.categoryUrl,
+    maxPages: cfg.maxPages,
+    headless: cfg.headless ? 1 : 0,
+    status: "RUNNING",
+    notes: null
   });
 
-  let status: "OK" | "FAILED" = "OK";
-  let pagesProcessed = 0;
-  let totalProducts = 0;
-  let note: string | null = null;
+  logger.info("run_start", { runId, categoryUrl: cfg.categoryUrl, maxPages: cfg.maxPages, headless: cfg.headless });
+
+  let status = "OK";
+  let notes: string | null = null;
 
   try {
-    const { products, pages } = await scrapeSilpoCategory({
-      runId,
-      categoryUrl: CONFIG.categoryUrl,
-      maxPages: CONFIG.maxPages,
-      headless: CONFIG.headless,
-      userAgent: CONFIG.userAgent,
-      timezoneId: CONFIG.timezoneId,
-      logger
-    });
+    const obs = await scrapeCategory(cfg, runId, logger);
+    insertObservations(db, obs);
+    logger.info("db_written", { runId, observations: obs.length });
 
-    for (const p of pages) insertPage(db, p);
+    const { header, rows } = fetchObservations(db, runId);
+    const csvPath = exportCsv(cfg.exportsDir, header, rows);
+    const xlsxPath = exportXlsx(cfg.exportsDir, header, rows);
+    logger.info("export_done", { runId, csv: csvPath, xlsx: xlsxPath });
 
-    insertProducts(db, products);
-
-    pagesProcessed = pages.length;
-    totalProducts = products.length;
-
-    logger.info("DB", "write", `pages=${pagesProcessed} products=${totalProducts}`);
+    if (rows.length === 0) {
+      status = "ZERO";
+      notes = "No observations extracted (challenge or empty payload).";
+      logger.warn("zero_observations", { runId, notes });
+    }
   } catch (e: any) {
-    status = "FAILED";
-    note = e?.message ? String(e.message) : String(e);
-    logger.error("ERROR", "main", "run failed", { error: note });
-  } finally {
-    const finishedAt = new Date().toISOString();
-    finishRun(db, {
-      runId,
-      finishedAt,
-      status,
-      pagesProcessed,
-      totalProducts,
-      note
-    });
-
-    // Export XLSX from DB (even if FAILED -> may still have partial rows)
-    const rows = getRunProducts(db, runId);
-
-    const outXlsx = `${CONFIG.exportsDir}/silpo_products_${runId}.xlsx`;
-    await exportRowsToXlsx({ rows, outPath: outXlsx, sheetName: "silpo_raw" });
-
-    const latestXlsx = `${CONFIG.exportsDir}/latest.xlsx`;
-    await exportRowsToXlsx({ rows, outPath: latestXlsx, sheetName: "silpo_raw" });
-
-    logger.info("EXPORT", "xlsx", "export finished", { outXlsx, latestXlsx, rows: rows.length });
-
-    db.close();
-    logger.info("DONE", "main", `status=${status}`, { runId, log: logger.getLogPath() });
+    status = "ERROR";
+    notes = String(e?.message ?? e);
+    logger.error("run_error", { runId, error: notes });
   }
 
-  if (status === "FAILED") process.exit(1);
+  finishRun(db, runId, nowIso(), status, notes);
+  logger.info("run_finish", { runId, status, notes });
+
+  db.close();
 }
 
 main().catch((e) => {
-  // eslint-disable-next-line no-console
   console.error(e);
   process.exit(1);
 });
