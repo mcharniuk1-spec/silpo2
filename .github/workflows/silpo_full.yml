@@ -1,0 +1,48 @@
+name: Silpo2 Full Scraper (Daily)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * *"   # daily
+
+concurrency:
+  group: silpo2-full-scraper
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install deps
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Build
+        run: npm run build
+
+      - name: Run scraper
+        env:
+          SILPO_MAX_PAGES: "10"
+          SILPO_HEADLESS: "true"
+        run: npm run start
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: silpo2_outputs
+          path: |
+            data/silpo.sqlite
+            data/exports/*.xlsx
+            data/exports/*.csv
+            data/logs/*.jsonl
+            data/html_snapshots/*.html
