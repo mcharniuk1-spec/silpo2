@@ -1,39 +1,38 @@
 /**
- * Best-effort API fallback.
- * If Silpo site blocks DOM/JSON payloads, sometimes a catalog API still responds.
- * This function is intentionally defensive: if schema changes, it returns [] and logs it.
+ * Fallback catalog API for Silpo
+ * No guarantees about schema stability - use for discovery
  */
-export async function fetchProductsViaApi(categoryId: number, page: number, perPage: number) {
-  const url = "https://api.catalog.ecom.silpo.ua/api/2.0/exec/EcomCatalogGlobal";
 
+export async function fetchProductsViaApi(
+  categoryId: number,
+  page: number,
+  perPage: number
+) {
   const body = {
     query: { collection: "EcomCatalogGlobal" },
-    variables: {
-      categoryId,
-      page,
-      perPage
-    }
+    filter: { category: [categoryId] },
+    page: { number: page, size: perPage },
   };
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
+  try {
+    const resp = await fetch(
+      "https://api.catalog.ecom.silpo.ua/api/2.0/exec/EcomCatalogGlobal",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(body),
+      }
+    );
 
-  if (!res.ok) {
-    return { ok: false, status: res.status, items: [] as any[] };
+    if (!resp.ok) return [];
+
+    const data: any = await resp.json();
+    const items = data?.data?.items;
+    return Array.isArray(items) ? items : [];
+  } catch {
+    return [];
   }
-
-  const json: any = await res.json().catch(() => null);
-  // schema is unknown; try common places
-  const items =
-    json?.data?.items ??
-    json?.data?.products ??
-    json?.items ??
-    [];
-
-  return { ok: true, status: res.status, items: Array.isArray(items) ? items : [] };
 }
