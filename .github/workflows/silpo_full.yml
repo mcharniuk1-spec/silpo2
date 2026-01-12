@@ -1,12 +1,12 @@
-name: Silpo2 Full Scraper (Daily)
+name: Silpo2 Full Scraper
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Manual trigger
   schedule:
-    - cron: "0 4 * * *"   # daily
+    - cron: "30 3 * * *"   # Every day at 3:30 AM UTC
 
 concurrency:
-  group: silpo2-full-scraper
+  group: silpo2-full
   cancel-in-progress: false
 
 jobs:
@@ -17,26 +17,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Build
+      - name: Build TypeScript
         run: npm run build
 
       - name: Run scraper
         env:
           SILPO_MAX_PAGES: "10"
           SILPO_HEADLESS: "true"
-        run: npm run start
+        run: npm start
 
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: silpo2_outputs
@@ -45,4 +47,4 @@ jobs:
             data/exports/*.xlsx
             data/exports/*.csv
             data/logs/*.jsonl
-            data/html_snapshots/*.html
+          retention-days: 30
