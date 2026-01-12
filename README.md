@@ -1,14 +1,17 @@
-# silpo2 — Full Scraper (dairy)
+# Silpo.ua Scraper (TypeScript + Playwright)
 
-Outputs:
-- DB: `data/silpo.sqlite`
-- Exports: `data/exports/latest.xlsx`, `data/exports/latest.csv`
-- Logs: `data/logs/run_*.jsonl`
-- HTML snapshots (only when challenge detected): `data/html_snapshots/*.html`
+Full dairy/eggs product scraper for Silpo.ua using Node.js 20+, TypeScript, Playwright, and SQLite.
 
-Run locally:
+## Features
+
+- **DOM + API fallback**: Direct scraping with API discovery
+- **Cloudflare detection**: Challenge detection and safe exit
+- **3-tier persistence**: SQLite (history) + XLSX (readable) + CSV (analytics)
+- **Structured logging**: JSONL file + Excel logs sheet
+- **Environment configurable**: All settings via env vars
+
+## Installation
+
 ```bash
 npm ci
-npx playwright install chromium
-npm run build
-npm run start
+npx playwright install --with-deps chromium
